@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>QingJie</RootNamespace>
+    <AssemblyName>QingJie</AssemblyName>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
+    <AssemblyTitle>轻截 QingJie</AssemblyTitle>
+    <Product>轻截</Product>
+    <Description>轻量级 Windows 截图工具：划区截图、贴图钉住、右键复制</Description>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <DebugType>embedded</DebugType>
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>false</SelfContained>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- WFO0003：WinForms 建议用 ApplicationHighDpiMode 配置 DPI；
+         本项目以 WPF 为主，DPI 感知必须写在 manifest 里（PerMonitorV2），故此忽略该提示 -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+  </PropertyGroup>
+
+  <!-- 同时启用 WinForms 时，SDK 会把 System.Drawing / System.Windows.Forms 塞进全局 using，
+       与 WPF 的 Point/Color/Brush 等类型冲突。这里移除，让各文件按需显式引入。 -->
+  <ItemGroup>
+    <Using Remove="System.Drawing" />
+    <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
+</Project>

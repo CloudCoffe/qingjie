@@ -1,0 +1,21 @@
+<Window x:Class="QingJie.Core.ToastWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ShowInTaskbar="False" Topmost="True" ShowActivated="False"
+        SizeToContent="WidthAndHeight" WindowStartupLocation="Manual"
+        FontFamily="Microsoft YaHei UI, Segoe UI" ResizeMode="NoResize">
+    <Border Background="#F21C1F26" CornerRadius="10" Padding="18,11"
+            BorderBrush="#3AFFFFFF" BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="18" ShadowDepth="4" Opacity="0.4" Color="#000000" />
+        </Border.Effect>
+        <StackPanel Orientation="Horizontal">
+            <Path Data="M2,7 L6,11 L14,2" Stroke="#4ADE80" StrokeThickness="2"
+                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                  Width="16" Height="13" Stretch="Uniform" VerticalAlignment="Center" />
+            <TextBlock x:Name="MessageText" Foreground="#F2F4F7" FontSize="13" Margin="9,0,0,0"
+                       VerticalAlignment="Center" Text="已复制到剪贴板" />
+        </StackPanel>
+    </Border>
+</Window>

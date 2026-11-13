@@ -1,0 +1,21 @@
+# 构建输出
+bin/
+obj/
+dist/
+publish/
+
+# 开发期自检产物
+_shots/
+_probe.png
+assets/_preview*.png
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# 系统
+Thumbs.db
+desktop.ini
+.DS_Store
