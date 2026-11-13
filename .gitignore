@@ -8,6 +8,7 @@ publish/
 _shots/
 _probe.png
 assets/_preview*.png
+.workbuddy/
 
 # IDE
 .vs/
