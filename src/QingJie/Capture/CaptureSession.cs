@@ -196,6 +196,10 @@ internal sealed class CaptureSession
         return window?.ComposeResult();
     }
 
+    /// <summary>开发自检：光标所在屏幕的第一个覆盖层。</summary>
+    internal static OverlayWindow? ActiveWindow
+        => _active?._windows.FirstOrDefault(w => w.Monitor.IsPrimary) ?? _active?._windows.FirstOrDefault();
+
     private void CloseAll()
     {
         foreach (var window in _windows.ToList())

@@ -174,6 +174,16 @@ public partial class App : Application
             }
         }
 
+        if (args.Contains("--dragtest"))
+        {
+            int index = Array.IndexOf(args, "--dragtest");
+            if (index + 1 < args.Length)
+            {
+                RunDragTest(args[index + 1]);
+                return true;
+            }
+        }
+
         if (args.Contains("--capture"))
         {
             _captureOnStart = true;
@@ -439,9 +449,135 @@ public partial class App : Application
         }
     }
 
-    private static void SaveScreen(string path)
+    /// <summary>开发用：用合成鼠标事件真实拖拽一次，验证划区/移动是否响应。</summary>
+    private async void RunDragTest(string outputPath)
     {
         try
+        {
+            var monitors = Native.EnumMonitors();
+            var monitor = monitors.FirstOrDefault(m => m.IsPrimary) ?? monitors.FirstOrDefault();
+            if (monitor is null) return;
+
+            // 先拍一张没有覆盖层的桌面，用于比对“拖出来的选区”裁得准不准
+            SaveScreen(Path.Combine(Path.GetDirectoryName(outputPath) ?? ".",
+                Path.GetFileNameWithoutExtension(outputPath) + "_base.png"));
+
+            CaptureSession.Start(Config);
+            await Task.Delay(900);
+
+            var overlay = CaptureSession.ActiveWindow;
+            if (overlay is null)
+            {
+                Logger.Error("拖拽自检失败：覆盖层未创建");
+                return;
+            }
+
+            Logger.Info($"拖拽自检开始 | {overlay.DebugState()}");
+
+            // 阶段一：空白处按下并拖出一个选区
+            await DragAsync(monitor.X + 200, monitor.Y + 200, monitor.X + 900, monitor.Y + 700, 12);
+            await Task.Delay(250);
+            string afterCreate = overlay.DebugState();
+            Logger.Info($"阶段1 划区后 | {afterCreate}");
+
+            // 阶段二：在选区内部按下并整体拖动
+            int cx = monitor.X + 550;
+            int cy = monitor.Y + 450;
+            await DragAsync(cx, cy, cx + 100, cy + 60, 10);
+            await Task.Delay(250);
+            Logger.Info($"阶段2 移动后 | {overlay.DebugState()}");
+
+            // 阶段三：拖右下角控制点改尺寸
+            var before = overlay.DebugState();
+            await DragAsync(monitor.X + 1000, monitor.Y + 760, monitor.X + 1100, monitor.Y + 810, 8);
+            await Task.Delay(250);
+            Logger.Info($"阶段3 缩放后 | {overlay.DebugState()}");
+
+            // 阶段四：按 R 切矩形工具，再拖一笔标注
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(overlay).Handle;
+            Logger.Info($"焦点检查：foreground={Native.GetForegroundWindow()} overlay={hwnd} " +
+                        $"wpfFocus={System.Windows.Input.Keyboard.FocusedElement?.GetType().Name ?? "null"} " +
+                        $"isActive={overlay.IsActive}");
+            InputSim.KeyPress(0x52);
+            await Task.Delay(200);
+            Logger.Info($"按键后 | {overlay.DebugState()}");
+            await DragAsync(monitor.X + 350, monitor.Y + 320, monitor.X + 650, monitor.Y + 520, 10);
+            await Task.Delay(300);
+            Logger.Info($"阶段4 标注后 | {overlay.DebugState()}");
+
+            // 阶段五：T 切文字工具 → 点一下 → 打字 → 回车提交
+            InputSim.KeyPress(0x54);
+            await Task.Delay(200);
+            InputSim.MoveTo(monitor.X + 450, monitor.Y + 420);
+            await Task.Delay(150);
+            InputSim.LeftDown();
+            await Task.Delay(120);
+            InputSim.LeftUp();
+            await Task.Delay(250);
+            Logger.Info($"阶段5 打开输入框 | {overlay.DebugState()}");
+            overlay.SetTextForTest("轻截 QJTEST");
+            await Task.Delay(150);
+            InputSim.KeyPress(0x0D);
+            await Task.Delay(300);
+            Logger.Info($"阶段5 提交文字 | {overlay.DebugState()}");
+
+            SaveScreen(Path.Combine(Path.GetDirectoryName(outputPath) ?? ".",
+                Path.GetFileNameWithoutExtension(outputPath) + "_ui.png"));
+
+            var image = overlay.ComposeResult();
+            ImageIo.SavePng(image, outputPath);
+            Logger.Info($"拖拽自检合成：{image.PixelWidth}x{image.PixelHeight} 红色像素 {CountRedPixels(image)} " +
+                        $"(阶段2 前 {before})");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("拖拽自检失败", ex);
+        }
+        finally
+        {
+            ExitApp();
+        }
+    }
+
+    /// <summary>把光标从 (x1,y1) 分步移到 (x2,y2)，中间按下左键再抬起。</summary>
+    private static async Task DragAsync(int x1, int y1, int x2, int y2, int steps)
+    {
+        InputSim.MoveTo(x1, y1);
+        await Task.Delay(120);
+        InputSim.LeftDown();
+        await Task.Delay(80);
+
+        for (int i = 1; i <= steps; i++)
+        {
+            int x = x1 + (x2 - x1) * i / steps;
+            int y = y1 + (y2 - y1) * i / steps;
+            InputSim.MoveTo(x, y);
+            await Task.Delay(30);
+        }
+
+        await Task.Delay(80);
+        InputSim.LeftUp();
+        await Task.Delay(120);
+    }
+
+    /// <summary>统计合成图里接近纯红的像素数，用于确认标注确实画进了结果。</summary>
+    private static int CountRedPixels(BitmapSource image)
+    {
+        int stride = image.PixelWidth * 4;
+        var buffer = new byte[stride * image.PixelHeight];
+        image.CopyPixels(buffer, stride, 0);
+
+        int count = 0;
+        for (int i = 0; i + 3 < buffer.Length; i += 4)
+        {
+            if (buffer[i + 2] > 190 && buffer[i + 1] < 110 && buffer[i] < 110) count++;
+        }
+
+        return count;
+    }
+
+    private static void SaveScreen(string path)
+    {        try
         {
             using var grab = ScreenGrab.Capture();
             ImageIo.SavePng(grab.Full, path);

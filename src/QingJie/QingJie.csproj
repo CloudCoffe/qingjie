@@ -16,8 +16,8 @@
     <AssemblyTitle>轻截 QingJie</AssemblyTitle>
     <Product>轻截</Product>
     <Description>轻量级 Windows 截图工具：划区截图、贴图钉住、右键复制</Description>
-    <Version>1.0.0</Version>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.0.1</Version>
+    <FileVersion>1.0.1.0</FileVersion>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <DebugType>embedded</DebugType>
     <PublishSingleFile>true</PublishSingleFile>

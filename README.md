@@ -132,7 +132,24 @@ QingJie.exe --capture              # 启动后立即进入截图
 QingJie.exe --snapshot out.png     # 渲染截图界面并抓屏，输出 out.png 与 out_selected.png
 QingJie.exe --compose out.png      # 导出示例选区合成图，并校验剪贴板写入
 QingJie.exe --pintest out.png      # 创建贴图窗口并抓屏，校验定位与 1:1 显示
+QingJie.exe --dragtest out.png     # 用合成鼠标/键盘真实拖拽一遍：划区 → 拖动 → 控制点缩放 → 画标注 → 输入文字
 ```
+
+`--dragtest` 会真实移动鼠标并按下拖动，跑完把每一步的选区（DIU 与物理像素）写进日志，同时输出
+`out_base.png`（拖拽前的桌面）与 `out.png`（拖拽后的裁剪结果），便于做逐像素对齐校验。
+
+## 更新日志
+
+### v1.0.1
+
+- 修复**拖拽无法划区**：鼠标捕获原先挂在 `Window` 上，捕获后事件的源变成 Window 本身，
+  作为子元素的画布收不到 `MouseMove` / `MouseLeftButtonUp`，导致按下后选区不再跟随、松手也不复位。
+  改为捕获到画布元素后，划区、拖动、控制点缩放、标注绘制全部恢复。
+- 修复**中文输入法抢走快捷键**：覆盖层窗口禁用了输入法（`InputMethod.IsInputMethodEnabled=False`），
+  否则激活输入法时 `R/O/A/P/T/M` 等单键会被判成 `ImeProcessed` 而失效；文字输入框单独开启输入法，
+  仍可正常输入中文。
+- 新增 `--dragtest` 真实输入自检模式。
+
 
 ## 已知限制
 

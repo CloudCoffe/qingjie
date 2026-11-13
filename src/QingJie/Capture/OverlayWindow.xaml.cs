@@ -65,6 +65,31 @@ public sealed partial class OverlayWindow : Window
 
     internal bool HasSelection => !_selection.IsEmpty && _selection.Width >= 1 && _selection.Height >= 1;
 
+    /// <summary>开发自检：已收到的鼠标移动事件数，用于判断事件是否真的路由到了画布。</summary>
+    internal int MoveCount { get; private set; }
+
+    /// <summary>开发自检：已收到的按键事件数。</summary>
+    internal int KeyCount { get; private set; }
+
+    private string _lastKey = "-";
+
+    /// <summary>开发自检：把当前拖拽状态打平成字符串。</summary>
+    internal string DebugState()
+    {
+        var phys = SelectionPhysical;
+        var hwnd = new WindowInteropHelper(this).Handle;
+        string win = "n/a";
+        if (hwnd != IntPtr.Zero && Native.GetWindowRect(hwnd, out var r))
+        {
+            win = $"{r.Left},{r.Top} {r.Width}×{r.Height}";
+        }
+
+        return $"mode={_mode} move={MoveCount} captured={Root.IsMouseCaptured} anno={_annotations.Count} tool={_tool} key={KeyCount}:{_lastKey} " +
+               $"diu={_selection.X:0.#},{_selection.Y:0.#} {_selection.Width:0.#}×{_selection.Height:0.#} " +
+               $"phys={phys.X},{phys.Y} {phys.Width}×{phys.Height} scale={_scale:0.###} " +
+               $"win={win} monitor={_monitor.X},{_monitor.Y} {_monitor.Width}×{_monitor.Height}";
+    }
+
     private enum DragMode
     {
         None,
@@ -207,7 +232,7 @@ public sealed partial class OverlayWindow : Window
                 _activeHandle = handle;
                 _dragOrigin = pos;
                 _selectionOrigin = _selection;
-                CaptureMouse();
+                Root.CaptureMouse();
                 return;
             }
 
@@ -218,7 +243,7 @@ public sealed partial class OverlayWindow : Window
                     _mode = DragMode.Moving;
                     _dragOrigin = pos;
                     _selectionOrigin = _selection;
-                    CaptureMouse();
+                    Root.CaptureMouse();
                     return;
                 }
 
@@ -236,13 +261,14 @@ public sealed partial class OverlayWindow : Window
         _selection = new Rect(pos, new Size(0, 0));
         SelectionStarted?.Invoke(this);
         UpdateSelectionVisuals();
-        CaptureMouse();
+        Root.CaptureMouse();
     }
 
     private void Root_MouseMove(object sender, MouseEventArgs e)
     {
         if (_closing) return;
 
+        MoveCount++;
         var pos = e.GetPosition(Root);
 
         switch (_mode)
@@ -309,7 +335,7 @@ public sealed partial class OverlayWindow : Window
     {
         if (_closing) return;
 
-        if (IsMouseCaptured) ReleaseMouseCapture();
+        if (Root.IsMouseCaptured) Root.ReleaseMouseCapture();
 
         switch (_mode)
         {
@@ -497,7 +523,7 @@ public sealed partial class OverlayWindow : Window
         _draft.Points.Add(Clamp(pos));
         _draft.Points.Add(Clamp(pos));
         _mode = DragMode.Drawing;
-        CaptureMouse();
+        Root.CaptureMouse();
         RefreshAnnotations();
     }
 
@@ -531,6 +557,12 @@ public sealed partial class OverlayWindow : Window
     }
 
     private void TextEditor_LostFocus(object sender, RoutedEventArgs e) => HideTextEditor(commit: true);
+
+    /// <summary>开发自检：往文字输入框里填入内容（真实键盘输入会被输入法接管，无法脚本化）。</summary>
+    internal void SetTextForTest(string text)
+    {
+        if (TextEditor.Visibility == Visibility.Visible) TextEditor.Text = text;
+    }
 
     private void HideTextEditor(bool commit)
     {
@@ -854,6 +886,8 @@ public sealed partial class OverlayWindow : Window
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
         base.OnPreviewKeyDown(e);
+        KeyCount++;
+        _lastKey = $"{e.Key}/{e.SystemKey}/{(int)e.Key} mod={Keyboard.Modifiers}";
         if (_closing) return;
 
         bool ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
@@ -1012,7 +1046,7 @@ public sealed partial class OverlayWindow : Window
 
         HideTextEditor(commit: true);
         _closing = true;
-        if (IsMouseCaptured) ReleaseMouseCapture();
+        if (Root.IsMouseCaptured) Root.ReleaseMouseCapture();
 
         try
         {
