@@ -44,6 +44,7 @@ public sealed partial class OverlayWindow : Window
     private Rect _selectionOrigin;
     private int _activeHandle = -1;
     private Point _textAnchor;
+    private Point _textAnchorLocal;
     private Color _color = Color.FromRgb(0xFF, 0x3B, 0x30);
     private double _thickness = 4;
     private bool _closing;
@@ -300,18 +301,19 @@ public sealed partial class OverlayWindow : Window
             case DragMode.Drawing:
             {
                 if (_draft is null) return;
+                var local = ClampToSelection(pos);
                 if (_draft.Tool == AnnotationTool.Pen)
                 {
                     var last = _draft.Points[^1];
-                    if ((pos - last).Length >= 1.5)
+                    if ((local - last).Length >= 1.5)
                     {
-                        _draft.Points.Add(Clamp(pos));
+                        _draft.Points.Add(local);
                         RefreshAnnotations();
                     }
                 }
                 else
                 {
-                    _draft.Points[1] = Clamp(pos);
+                    _draft.Points[1] = local;
                     RefreshAnnotations();
                 }
 
@@ -450,9 +452,21 @@ public sealed partial class OverlayWindow : Window
         };
     }
 
-    private Point Clamp(Point p) => new(
+    /// <summary>把窗口坐标夹进选区，结果仍是窗口坐标。</summary>
+    private Point ClampToWindow(Point p) => new(
         Math.Clamp(p.X, _selection.X, _selection.Right),
         Math.Clamp(p.Y, _selection.Y, _selection.Bottom));
+
+    /// <summary>
+    /// 把窗口坐标换算成「相对选区左上角」的标注坐标（标注统一使用这套坐标），
+    /// 换算后再夹进选区内，避免笔画超出边界。
+    /// </summary>
+    private Point ClampToSelection(Point p)
+    {
+        if (_selection.IsEmpty) return p;
+        var w = ClampToWindow(p);
+        return new Point(w.X - _selection.X, w.Y - _selection.Y);
+    }
 
     private static Rect NormalizeRect(Point a, Point b)
         => new(Math.Min(a.X, b.X), Math.Min(a.Y, b.Y), Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y));
@@ -520,8 +534,8 @@ public sealed partial class OverlayWindow : Window
             Thickness = _thickness,
             FontSize = 12 + _thickness * 2.5,
         };
-        _draft.Points.Add(Clamp(pos));
-        _draft.Points.Add(Clamp(pos));
+        _draft.Points.Add(ClampToSelection(pos));
+        _draft.Points.Add(ClampToSelection(pos));
         _mode = DragMode.Drawing;
         Root.CaptureMouse();
         RefreshAnnotations();
@@ -529,7 +543,8 @@ public sealed partial class OverlayWindow : Window
 
     private void ShowTextEditor(Point pos)
     {
-        _textAnchor = Clamp(pos);
+        _textAnchor = ClampToWindow(pos);
+        _textAnchorLocal = ClampToSelection(pos);
         TextEditor.Text = string.Empty;
         TextEditor.Foreground = new SolidColorBrush(_color);
         TextEditor.FontSize = 12 + _thickness * 2.5;
@@ -582,7 +597,7 @@ public sealed partial class OverlayWindow : Window
                 FontSize = TextEditor.FontSize,
                 Text = text,
             };
-            anno.Points.Add(_textAnchor);
+            anno.Points.Add(_textAnchorLocal);
             _annotations.Add(anno);
             RefreshAnnotations();
         }
@@ -622,6 +637,12 @@ public sealed partial class OverlayWindow : Window
     }
 
     // ---------------------------------------------------------------- 选区绘制
+
+    /// <summary>当前选区对应的物理像素矩形（屏幕坐标）。</summary>
+    internal Int32Rect SelectionPhysicalRect => SelectionPhysical;
+
+    /// <summary>DIU → 物理像素的缩放比。</summary>
+    internal double Scale => _scale;
 
     private Int32Rect SelectionPhysical
     {

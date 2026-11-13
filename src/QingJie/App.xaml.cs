@@ -202,6 +202,16 @@ public partial class App : Application
             }
         }
 
+        if (args.Contains("--annotest"))
+        {
+            int index = Array.IndexOf(args, "--annotest");
+            if (index + 1 < args.Length)
+            {
+                RunAnnoTest(args[index + 1]);
+                return true;
+            }
+        }
+
         if (args.Contains("--balltest"))
         {
             int index = Array.IndexOf(args, "--balltest");
@@ -652,6 +662,88 @@ public partial class App : Application
         }
     }
 
+    /// <summary>
+    /// 开发用：验证标注「从鼠标按下点开始画」，且落在选区内不偏移。
+    /// 先划一个固定选区，再在选区内拖一个矩形标注，最后比对合成图里红色像素的外接矩形。
+    /// </summary>
+    private async void RunAnnoTest(string outputPath)
+    {
+        try
+        {
+            var monitors = Native.EnumMonitors();
+            var monitor = monitors.FirstOrDefault(m => m.IsPrimary) ?? monitors.FirstOrDefault();
+            if (monitor is null) return;
+
+            CaptureSession.Start(Config);
+            await Task.Delay(900);
+
+            var overlay = CaptureSession.ActiveWindow;
+            if (overlay is null)
+            {
+                Logger.Error("标注自检：覆盖层未创建");
+                return;
+            }
+
+            // 1) 划一个固定选区（物理像素）
+            int selX = monitor.X + 200, selY = monitor.Y + 160;
+            int selW = 640, selH = 440;
+            await DragAsync(selX, selY, selX + selW, selY + selH, 10);
+            await Task.Delay(250);
+
+            // 2) 切矩形工具，在选区内从 A 拖到 B
+            InputSim.KeyPress(0x52); // R
+            await Task.Delay(250);
+
+            int fromX = selX + 160, fromY = selY + 120;
+            int toX = fromX + 220, toY = fromY + 160;
+            await DragAsync(fromX, fromY, toX, toY, 10);
+            await Task.Delay(300);
+
+            var phys = overlay.SelectionPhysicalRect;
+            double scale = overlay.Scale;
+
+            var image = overlay.ComposeResult();
+            ImageIo.SavePng(image, outputPath);
+
+            var bounds = RedBounds(image);
+            // 期望：标注在合成图中的位置 = 按下点相对选区左上角的物理偏移
+            int expectLeft = fromX - phys.X;
+            int expectTop = fromY - phys.Y;
+            int expectRight = toX - phys.X;
+            int expectBottom = toY - phys.Y;
+            int tolerance = (int)Math.Ceiling(Math.Max(6, overlay.Scale * 6));
+
+            Logger.Info($"标注自检：scale={scale:0.###} 选区物理=({phys.X},{phys.Y}) {phys.Width}×{phys.Height} " +
+                        $"图像={image.PixelWidth}×{image.PixelHeight}");
+            Logger.Info($"标注自检：期望 bbox=({expectLeft},{expectTop})-({expectRight},{expectBottom}) " +
+                        $"实际 bbox=({bounds.X},{bounds.Y})-({bounds.X + bounds.Width},{bounds.Y + bounds.Height}) 容差={tolerance}");
+
+            if (bounds.Width <= 0 || bounds.Height <= 0)
+            {
+                Logger.Error("标注自检：合成图中没找到红色标注");
+                return;
+            }
+
+            int dl = Math.Abs(bounds.X - expectLeft);
+            int dt = Math.Abs(bounds.Y - expectTop);
+            int dr = Math.Abs(bounds.X + bounds.Width - expectRight);
+            int db = Math.Abs(bounds.Y + bounds.Height - expectBottom);
+            bool pass = dl <= tolerance && dt <= tolerance && dr <= tolerance && db <= tolerance;
+
+            Logger.Info(pass
+                ? $"标注自检：通过（左上偏差 {dl},{dt} 右下偏差 {dr},{db}）"
+                : $"标注自检：失败（左上偏差 {dl},{dt} 右下偏差 {dr},{db}）");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("标注自检失败", ex);
+        }
+        finally
+        {
+            ExitApp();
+        }
+    }
+
     /// <summary>开发用：验证剪贴板写入的格式与像素，模拟别的软件粘贴时看到的内容。</summary>
     private void RunClipTest(string outputPath)
     {
@@ -894,6 +986,33 @@ public partial class App : Application
         }
 
         return count;
+    }
+
+    /// <summary>求合成图里接近纯红像素的外接矩形，用于核对标注落点。</summary>
+    private static Int32Rect RedBounds(BitmapSource image)
+    {
+        int stride = image.PixelWidth * 4;
+        var buffer = new byte[stride * image.PixelHeight];
+        image.CopyPixels(buffer, stride, 0);
+
+        int minX = int.MaxValue, minY = int.MaxValue, maxX = -1, maxY = -1;
+        for (int y = 0; y < image.PixelHeight; y++)
+        {
+            int row = y * stride;
+            for (int x = 0; x < image.PixelWidth; x++)
+            {
+                int i = row + x * 4;
+                if (buffer[i + 2] > 190 && buffer[i + 1] < 110 && buffer[i] < 110)
+                {
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+        }
+
+        return maxX < 0 ? new Int32Rect(0, 0, 0, 0) : new Int32Rect(minX, minY, maxX - minX + 1, maxY - minY + 1);
     }
 
     private static void SaveScreen(string path)
