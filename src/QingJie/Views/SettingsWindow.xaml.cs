@@ -24,6 +24,7 @@ public partial class SettingsWindow : Window
         AskPathCheck.IsChecked = config.AskSavePath;
         MagnifierCheck.IsChecked = config.ShowMagnifier;
         CloseAfterCopyCheck.IsChecked = config.CloseAfterCopy;
+        BallCheck.IsChecked = config.ShowFloatingBall;
         StartupCheck.IsChecked = config.StartWithWindows;
 
         var version = Assembly.GetExecutingAssembly().GetName().Version;
@@ -101,6 +102,7 @@ public partial class SettingsWindow : Window
         _config.AskSavePath = AskPathCheck.IsChecked == true;
         _config.ShowMagnifier = MagnifierCheck.IsChecked == true;
         _config.CloseAfterCopy = CloseAfterCopyCheck.IsChecked == true;
+        _config.ShowFloatingBall = BallCheck.IsChecked == true;
         _config.StartWithWindows = StartupCheck.IsChecked == true;
 
         _config.Save();

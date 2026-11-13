@@ -162,6 +162,14 @@ public sealed class Settings
     /// <summary>开机自启动。</summary>
     public bool StartWithWindows { get; set; }
 
+    /// <summary>在桌面显示悬浮球（点一下即进入截图）。</summary>
+    public bool ShowFloatingBall { get; set; } = true;
+
+    /// <summary>悬浮球位置（物理像素）。为 null 表示还没拖过，用默认位置。</summary>
+    public int? BallX { get; set; }
+
+    public int? BallY { get; set; }
+
     [JsonIgnore]
     public string SettingsFilePath => Path.Combine(AppPaths.DataDirectory, "settings.json");
 

@@ -1,0 +1,151 @@
+<Window x:Class="QingJie.Ball.FloatingBall"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="轻截悬浮球"
+        Width="74" Height="74" Left="-4000" Top="-4000"
+        WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False"
+        AllowsTransparency="True" Background="Transparent" Topmost="True"
+        ShowActivated="False" UseLayoutRounding="True" SnapsToDevicePixels="True"
+        FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="12"
+        Cursor="Hand"
+        MouseLeftButtonDown="Root_MouseLeftButtonDown"
+        MouseMove="Root_MouseMove"
+        MouseLeftButtonUp="Root_MouseLeftButtonUp">
+
+    <Window.Resources>
+        <Style TargetType="ContextMenu">
+            <Setter Property="Background" Value="#F51C1F26" />
+            <Setter Property="Foreground" Value="#E9ECF1" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="#3AFFFFFF"
+                                BorderThickness="1" CornerRadius="9" Padding="3">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="14" ShadowDepth="3" Opacity="0.35" Color="#000000" />
+                            </Border.Effect>
+                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle" />
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="MenuItem">
+            <Setter Property="Foreground" Value="#E9ECF1" />
+            <Setter Property="FontSize" Value="12.5" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="11,7" Margin="0,1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="Check" Text="✓" Foreground="#2E7CF6" FontSize="11"
+                                           Margin="0,0,6,0" VerticalAlignment="Center" Visibility="Hidden" />
+                                <ContentPresenter Grid.Column="1" ContentSource="Header" VerticalAlignment="Center"
+                                                  RecognizesAccessKey="False" />
+                                <TextBlock Grid.Column="2" Text="{TemplateBinding InputGestureText}"
+                                           Foreground="#7E858F" FontSize="11" Margin="22,0,0,0"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#26FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Check" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="Separator">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Separator">
+                        <Rectangle Height="1" Fill="#26FFFFFF" Margin="8,4" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Window.ContextMenu>
+        <ContextMenu x:Name="BallMenu" Opened="BallMenu_Opened">
+            <MenuItem x:Name="MenuCapture" Header="开始截图" Click="MenuCapture_Click" />
+            <Separator />
+            <MenuItem x:Name="MenuSettings" Header="设置…" Click="MenuSettings_Click" />
+            <MenuItem x:Name="MenuHide" Header="隐藏悬浮球" Click="MenuHide_Click" />
+            <Separator />
+            <MenuItem x:Name="MenuExit" Header="退出轻截" Click="MenuExit_Click" />
+        </ContextMenu>
+    </Window.ContextMenu>
+
+    <Grid x:Name="Root" RenderTransformOrigin="0.5,0.5" ToolTipService.InitialShowDelay="450"
+          ToolTipService.ShowDuration="9000">
+        <Grid.RenderTransform>
+            <ScaleTransform x:Name="BallScale" ScaleX="1" ScaleY="1" />
+        </Grid.RenderTransform>
+        <Grid.ToolTip>
+            <ToolTip Background="#F51C1F26" Foreground="#E9ECF1" BorderBrush="#3AFFFFFF" BorderThickness="1"
+                     Padding="10,6" HasDropShadow="True">
+                <StackPanel>
+                    <TextBlock Text="轻截 · 点击开始截图" FontSize="12.5" />
+                    <TextBlock Text="拖动可移动位置　右键更多" FontSize="11" Foreground="#9BA1AC" Margin="0,3,0,0" />
+                </StackPanel>
+            </ToolTip>
+        </Grid.ToolTip>
+
+        <!-- 悬停光晕 -->
+        <Ellipse x:Name="Halo" Margin="5" Opacity="0" IsHitTestVisible="False" Fill="#702E7CF6">
+            <Ellipse.Effect>
+                <BlurEffect Radius="7" KernelType="Gaussian" />
+            </Ellipse.Effect>
+        </Ellipse>
+
+        <!-- 球体 -->
+        <Ellipse Margin="7">
+            <Ellipse.Effect>
+                <DropShadowEffect BlurRadius="13" ShadowDepth="3" Direction="90" Opacity="0.32" Color="#0B1B33" />
+            </Ellipse.Effect>
+            <Ellipse.Fill>
+                <LinearGradientBrush StartPoint="0.1,0" EndPoint="0.6,1">
+                    <GradientStop Color="#5C9EFF" Offset="0" />
+                    <GradientStop Color="#2F76F0" Offset="0.55" />
+                    <GradientStop Color="#1F52BC" Offset="1" />
+                </LinearGradientBrush>
+            </Ellipse.Fill>
+        </Ellipse>
+
+        <!-- 顶部高光 -->
+        <Ellipse Margin="7" IsHitTestVisible="False">
+            <Ellipse.Fill>
+                <RadialGradientBrush GradientOrigin="0.32,0.1" Center="0.32,0.1" RadiusX="0.95" RadiusY="0.9">
+                    <GradientStop Color="#66FFFFFF" Offset="0" />
+                    <GradientStop Color="#00FFFFFF" Offset="1" />
+                </RadialGradientBrush>
+            </Ellipse.Fill>
+        </Ellipse>
+
+        <!-- 内描边 -->
+        <Ellipse Margin="7.5" Stroke="#3DFFFFFF" StrokeThickness="1" IsHitTestVisible="False" />
+
+        <!-- 取景框图标 -->
+        <Path Data="M15,25 V15 H25 M35,15 H45 V25 M45,35 V45 H35 M25,45 H15 V35"
+              Stroke="#F7FFFFFF" StrokeThickness="2.6"
+              StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+              Width="60" Height="60" Stretch="None"
+              HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False">
+            <Path.Effect>
+                <DropShadowEffect BlurRadius="5" ShadowDepth="1" Direction="90" Opacity="0.45" Color="#001030" />
+            </Path.Effect>
+        </Path>
+    </Grid>
+</Window>

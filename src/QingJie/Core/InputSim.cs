@@ -10,6 +10,8 @@ internal static class InputSim
 
     private const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
     private const uint MOUSEEVENTF_LEFTUP = 0x0004;
+    private const uint MOUSEEVENTF_RIGHTDOWN = 0x0008;
+    private const uint MOUSEEVENTF_RIGHTUP = 0x0010;
 
     private const uint KEYEVENTF_KEYUP = 0x0002;
 
@@ -56,6 +58,10 @@ internal static class InputSim
     public static void LeftDown() => SendMouse(MOUSEEVENTF_LEFTDOWN);
 
     public static void LeftUp() => SendMouse(MOUSEEVENTF_LEFTUP);
+
+    public static void RightDown() => SendMouse(MOUSEEVENTF_RIGHTDOWN);
+
+    public static void RightUp() => SendMouse(MOUSEEVENTF_RIGHTUP);
 
     public static void KeyPress(ushort virtualKey)
     {

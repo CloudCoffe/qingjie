@@ -67,6 +67,7 @@
                     <CheckBox x:Name="AskPathCheck" Content="保存时询问文件路径" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,10" />
                     <CheckBox x:Name="MagnifierCheck" Content="显示放大镜与取色信息" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,10" />
                     <CheckBox x:Name="CloseAfterCopyCheck" Content="复制后自动关闭截图界面" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,10" />
+                    <CheckBox x:Name="BallCheck" Content="显示桌面悬浮球（点一下即截图）" Foreground="{StaticResource TextPrimary}" Margin="0,0,0,10" />
                     <CheckBox x:Name="StartupCheck" Content="开机自动启动" Foreground="{StaticResource TextPrimary}" />
                 </StackPanel>
 

@@ -9,6 +9,7 @@ internal sealed class AppTray : IDisposable
 {
     private readonly NotifyIcon _icon;
     private readonly ToolStripMenuItem _captureItem;
+    private readonly ToolStripMenuItem _ballItem;
 
     public AppTray(App app, Settings config)
     {
@@ -27,6 +28,13 @@ internal sealed class AppTray : IDisposable
         var settingsItem = new ToolStripMenuItem("设置…");
         settingsItem.Click += (_, _) => app.OpenSettings();
 
+        _ballItem = new ToolStripMenuItem("显示桌面悬浮球")
+        {
+            CheckOnClick = false,
+            Checked = config.ShowFloatingBall,
+        };
+        _ballItem.Click += (_, _) => app.ToggleBall();
+
         var folderItem = new ToolStripMenuItem("打开截图目录");
         folderItem.Click += (_, _) => app.OpenSaveDirectory();
 
@@ -35,6 +43,7 @@ internal sealed class AppTray : IDisposable
 
         menu.Items.Add(_captureItem);
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(_ballItem);
         menu.Items.Add(settingsItem);
         menu.Items.Add(folderItem);
         menu.Items.Add(new ToolStripSeparator());
@@ -57,6 +66,9 @@ internal sealed class AppTray : IDisposable
     }
 
     public void RefreshHotkeyText(Hotkey hotkey) => _captureItem.Text = $"开始截图（{hotkey}）";
+
+    /// <summary>同步托盘里「显示桌面悬浮球」的勾选状态。</summary>
+    public void RefreshBallItem(bool visible) => _ballItem.Checked = visible;
 
     public void ShowBalloon(string title, string message)
     {

@@ -5,6 +5,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using QingJie.Ball;
 using QingJie.Capture;
 using QingJie.Core;
 using QingJie.Pin;
@@ -24,6 +25,7 @@ public partial class App : Application
     private HotkeyManager? _hotkeyManager;
     private AppTray? _tray;
     private SettingsWindow? _settingsWindow;
+    private FloatingBall? _ball;
     private bool _captureOnStart;
 
     /// <summary>当前 App 实例（供各窗口访问设置与托盘）。</summary>
@@ -50,6 +52,9 @@ public partial class App : Application
         Config = Settings.Load();
         Logger.Info($"轻截启动 v{VersionText()}，热键 {Config.Hotkey}，日志目录 {AppPaths.DataDirectory}");
 
+        // 截图结束后要把悬浮球放回来，任何入口（含自检模式）都要挂上
+        CaptureSession.Closed += OnCaptureClosed;
+
         if (HandleCommandLine(e.Args)) return;
 
         _hotkeyManager = new HotkeyManager();
@@ -59,6 +64,8 @@ public partial class App : Application
 
         _tray = new AppTray(this, Config);
         ApplyStartupRegistration(Config.StartWithWindows);
+
+        if (!_captureOnStart && Config.ShowFloatingBall) ShowBall();
 
         if (!registered)
         {
@@ -195,6 +202,16 @@ public partial class App : Application
             }
         }
 
+        if (args.Contains("--balltest"))
+        {
+            int index = Array.IndexOf(args, "--balltest");
+            if (index + 1 < args.Length)
+            {
+                RunBallTest(args[index + 1]);
+                return true;
+            }
+        }
+
         if (args.Contains("--capture"))
         {
             _captureOnStart = true;
@@ -205,8 +222,18 @@ public partial class App : Application
 
     // ------------------------------------------------------------ 主要操作
 
-    public void CaptureNow()
+    /// <summary>开始截图。悬浮球先退场，避免自己被截进画面。</summary>
+    public async void CaptureNow()
     {
+        if (CaptureSession.IsCapturing) return;
+
+        if (_ball is { IsVisible: true })
+        {
+            _ball.HideBall();
+            // 等合成器真正把球从屏幕上撤掉，否则可能截到残影
+            await Task.Delay(120);
+        }
+
         try
         {
             CaptureSession.Start(Config);
@@ -216,6 +243,73 @@ public partial class App : Application
             Logger.Error("开始截图失败", ex);
             Toast.Show("截图失败，请查看日志");
         }
+
+        // 没真正进入截图（例如抓屏失败），立刻把球放回来
+        if (!CaptureSession.IsCapturing) RestoreBall();
+    }
+
+    /// <summary>截图流程结束（复制 / 保存 / 贴图 / 取消）后把悬浮球放回来。</summary>
+    private void OnCaptureClosed() => RestoreBall();
+
+    private void RestoreBall()
+    {
+        if (Config.ShowFloatingBall) ShowBall();
+    }
+
+    // ------------------------------------------------------------ 悬浮球
+
+    /// <summary>显示悬浮球（首次调用时创建窗口）。</summary>
+    public void ShowBall()
+    {
+        if (_ball is null)
+        {
+            _ball = new FloatingBall();
+            _ball.Clicked += CaptureNow;
+            _ball.Moved += OnBallMoved;
+        }
+
+        _ball.ShowAt(Config.BallX, Config.BallY);
+    }
+
+    /// <summary>隐藏悬浮球；persist 为 true 时同时关掉设置里的开关。</summary>
+    public void HideBall(bool persist)
+    {
+        _ball?.HideBall();
+
+        if (!persist) return;
+
+        Config.ShowFloatingBall = false;
+        Config.Save();
+        _tray?.RefreshBallItem(false);
+    }
+
+    /// <summary>托盘菜单里的「显示悬浮球」开关。</summary>
+    public void ToggleBall()
+    {
+        bool show = !(Config.ShowFloatingBall && _ball is { IsVisible: true });
+
+        Config.ShowFloatingBall = show;
+        Config.Save();
+        _tray?.RefreshBallItem(show);
+
+        if (show) ShowBall();
+        else _ball?.HideBall();
+
+        Logger.Info($"悬浮球：{(show ? "显示" : "隐藏")}");
+    }
+
+    /// <summary>拖动结束后记住位置（物理像素）。</summary>
+    private void OnBallMoved()
+    {
+        if (_ball is null) return;
+
+        var rect = _ball.Bounds();
+        if (rect.Width <= 0) return;
+
+        Config.BallX = rect.Left;
+        Config.BallY = rect.Top;
+        Config.Save();
+        Logger.Info($"悬浮球位置：({rect.Left},{rect.Top})");
     }
 
     public void OpenSettings()
@@ -264,6 +358,11 @@ public partial class App : Application
 
         _tray?.RefreshHotkeyText(Config.Hotkey);
         ApplyStartupRegistration(Config.StartWithWindows);
+
+        if (Config.ShowFloatingBall) ShowBall();
+        else _ball?.HideBall();
+        _tray?.RefreshBallItem(Config.ShowFloatingBall);
+
         Logger.Info($"设置已更新：热键 {Config.Hotkey}");
     }
 
@@ -294,6 +393,8 @@ public partial class App : Application
         }
 
         _pins.Clear();
+        _ball?.Close();
+        _ball = null;
         _hotkeyManager?.Dispose();
         _hotkeyManager = null;
         _tray?.Dispose();
@@ -339,6 +440,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        CaptureSession.Closed -= OnCaptureClosed;
         _hotkeyManager?.Dispose();
         _tray?.Dispose();
         _captureSignal?.Dispose();
@@ -619,6 +721,108 @@ public partial class App : Application
         }
         finally
         {
+            ExitApp();
+        }
+    }
+
+    /// <summary>开发用：用合成鼠标验证悬浮球——显示、拖动、点击截图、退场、恢复。</summary>
+    private async void RunBallTest(string outputPath)
+    {
+        string dir = Path.GetDirectoryName(outputPath) ?? ".";
+        string stem = Path.GetFileNameWithoutExtension(outputPath);
+        string Shot(string suffix) => Path.Combine(dir, stem + suffix + ".png");
+
+        // 记住用户真实设置，跑完还原，避免自检把球挪走
+        bool oldShow = Config.ShowFloatingBall;
+        int? oldX = Config.BallX;
+        int? oldY = Config.BallY;
+
+        try
+        {
+            Config.ShowFloatingBall = true;
+            Config.BallX = null;
+            Config.BallY = null;
+
+            // 基准：还没有悬浮球的桌面
+            SaveScreen(Shot("_base"));
+
+            ShowBall();
+            await Task.Delay(700);
+
+            var ball = _ball;
+            if (ball is null)
+            {
+                Logger.Error("悬浮球自检失败：窗口未创建");
+                return;
+            }
+
+            var r1 = ball.Bounds();
+            Logger.Info($"阶段1 悬浮球显示 | visible={ball.IsVisible} " +
+                        $"rect={r1.Left},{r1.Top} {r1.Width}x{r1.Height}");
+
+            // 阶段二：拖动 —— 窗口必须精确跟随光标，且不能被当成点击
+            // 向左下拖，避开右边缘的工作区夹取
+            int cx = r1.Left + r1.Width / 2;
+            int cy = r1.Top + r1.Height / 2;
+            await DragAsync(cx, cy, cx - 160, cy + 120, 12);
+            await Task.Delay(300);
+
+            var r2 = ball.Bounds();
+            int dx = r2.Left - r1.Left;
+            int dy = r2.Top - r1.Top;
+            Logger.Info($"阶段2 拖动后 | rect={r2.Left},{r2.Top} dx={dx} dy={dy} " +
+                        $"符合预期={Math.Abs(dx + 160) <= 3 && Math.Abs(dy - 120) <= 3} " +
+                        $"capturing={CaptureSession.IsCapturing}");
+
+            SaveScreen(Shot("_ball"));
+
+            // 阶段三：单击球心 —— 应当进入截图，同时球自己退场
+            int bx = r2.Left + r2.Width / 2;
+            int by = r2.Top + r2.Height / 2;
+            InputSim.MoveTo(bx, by);
+            await Task.Delay(200);
+            InputSim.LeftDown();
+            await Task.Delay(90);
+            InputSim.LeftUp();
+            await Task.Delay(900);
+
+            Logger.Info($"阶段3 单击后 | capturing={CaptureSession.IsCapturing} " +
+                        $"ballVisible={ball.IsVisible} gesture=[{ball.LastGesture}]");
+            SaveScreen(Shot("_overlay"));
+
+            // 阶段四：Esc 取消 —— 球必须回到原位置
+            CaptureSession.CancelActive();
+            await Task.Delay(800);
+
+            var r3 = ball.Bounds();
+            Logger.Info($"阶段4 取消后 | capturing={CaptureSession.IsCapturing} " +
+                        $"ballVisible={ball.IsVisible} rect={r3.Left},{r3.Top}");
+
+            SaveScreen(Shot("_restored"));
+
+            // 阶段五：右键 —— 菜单必须能弹出来
+            var r4 = ball.Bounds();
+            InputSim.MoveTo(r4.Left + r4.Width / 2, r4.Top + r4.Height / 2);
+            await Task.Delay(250);
+            InputSim.RightDown();
+            await Task.Delay(90);
+            InputSim.RightUp();
+            await Task.Delay(500);
+
+            SaveScreen(Shot("_menu"));
+            Logger.Info($"阶段5 右键后 | menuOpen={ball.MenuIsOpen}");
+            ball.CloseMenu();
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("悬浮球自检失败", ex);
+        }
+        finally
+        {
+            Config.ShowFloatingBall = oldShow;
+            Config.BallX = oldX;
+            Config.BallY = oldY;
+            Config.Save();
             ExitApp();
         }
     }

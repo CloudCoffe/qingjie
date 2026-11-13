@@ -22,6 +22,12 @@ internal sealed class CaptureSession
 
     public static bool IsCapturing => _active is not null;
 
+    /// <summary>一次截图流程结束（复制 / 保存 / 贴图 / 取消 / 异常）后触发。</summary>
+    public static event Action? Closed;
+
+    /// <summary>取消当前截图（供自检与外部调用）。</summary>
+    internal static void CancelActive() => _active?.Cancel();
+
     public static void Start(Settings config)
     {
         if (_active is not null)
@@ -202,6 +208,8 @@ internal sealed class CaptureSession
 
     private void CloseAll()
     {
+        bool wasActive = ReferenceEquals(_active, this);
+
         foreach (var window in _windows.ToList())
         {
             try
@@ -219,5 +227,16 @@ internal sealed class CaptureSession
 
         _windows.Clear();
         _active = null;
+
+        if (!wasActive) return;
+
+        try
+        {
+            Closed?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"截图结束回调异常：{ex.Message}");
+        }
     }
 }

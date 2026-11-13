@@ -15,6 +15,7 @@ internal static class Native
     public static readonly IntPtr HWND_TOPMOST = new(-1);
     public static readonly IntPtr HWND_NOTOPMOST = new(-2);
 
+    public const uint SWP_NOSIZE = 0x0001;
     public const uint SWP_NOZORDER = 0x0004;
     public const uint SWP_NOACTIVATE = 0x0010;
     public const uint SWP_SHOWWINDOW = 0x0040;
@@ -126,7 +127,9 @@ internal static class Native
                     mi.rcMonitor.Left, mi.rcMonitor.Top,
                     mi.rcMonitor.Width, mi.rcMonitor.Height,
                     scale,
-                    (mi.dwFlags & 1) != 0));
+                    (mi.dwFlags & 1) != 0,
+                    mi.rcWork.Left, mi.rcWork.Top,
+                    mi.rcWork.Width, mi.rcWork.Height));
             }
 
             return true;
@@ -165,8 +168,10 @@ internal static class Native
     public static extern uint GetCurrentThreadId();
 }
 
-/// <summary>单个显示器的信息（物理像素 + 缩放比例）。</summary>
-internal sealed record MonitorInfo(string Device, int X, int Y, int Width, int Height, double Scale, bool IsPrimary)
+/// <summary>单个显示器的信息（物理像素 + 缩放比例 + 工作区）。</summary>
+internal sealed record MonitorInfo(
+    string Device, int X, int Y, int Width, int Height, double Scale, bool IsPrimary,
+    int WorkX, int WorkY, int WorkWidth, int WorkHeight)
 {
     public override string ToString() => $"{Device} {Width}x{Height}@{Scale:0.##} pos=({X},{Y})";
 }
