@@ -1,40 +1,12 @@
 using System.IO;
-using System.Runtime.InteropServices;
-using System.Windows;
 using System.Windows.Media.Imaging;
 
 namespace QingJie.Core;
 
 internal static class ImageIo
 {
-    /// <summary>把位图写入剪贴板（同时提供 Bitmap 与 PNG 两种格式，兼容更多软件）。</summary>
-    public static bool CopyToClipboard(BitmapSource image)
-    {
-        // 剪贴板可能被其它程序短暂占用，重试几次
-        for (int attempt = 0; attempt < 6; attempt++)
-        {
-            try
-            {
-                var data = new DataObject();
-                data.SetImage(image);
-                data.SetData("PNG", EncodePng(image));
-
-                Clipboard.SetDataObject(data, true);
-                return true;
-            }
-            catch (COMException)
-            {
-                Thread.Sleep(60);
-            }
-            catch (Exception ex)
-            {
-                Logger.Warn($"写剪贴板失败：{ex.Message}");
-                Thread.Sleep(60);
-            }
-        }
-
-        return false;
-    }
+    /// <summary>把位图写入剪贴板（CF_DIB + CF_BITMAP + PNG，兼容主流软件）。</summary>
+    public static bool CopyToClipboard(BitmapSource image) => ClipboardImage.Copy(image);
 
     public static byte[] EncodePng(BitmapSource image)
     {

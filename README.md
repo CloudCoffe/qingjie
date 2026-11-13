@@ -133,12 +133,31 @@ QingJie.exe --snapshot out.png     # 渲染截图界面并抓屏，输出 out.pn
 QingJie.exe --compose out.png      # 导出示例选区合成图，并校验剪贴板写入
 QingJie.exe --pintest out.png      # 创建贴图窗口并抓屏，校验定位与 1:1 显示
 QingJie.exe --dragtest out.png     # 用合成鼠标/键盘真实拖拽一遍：划区 → 拖动 → 控制点缩放 → 画标注 → 输入文字
+QingJie.exe --cliptest out.png     # 造一张已知色块的图写进剪贴板，再读回校验格式与像素
 ```
 
 `--dragtest` 会真实移动鼠标并按下拖动，跑完把每一步的选区（DIU 与物理像素）写进日志，同时输出
 `out_base.png`（拖拽前的桌面）与 `out.png`（拖拽后的裁剪结果），便于做逐像素对齐校验。
 
+`tools/clip_inspect.py` 用纯 ctypes 调 Win32 剪贴板 API，模拟 Paint/Word 这类原生程序看到的格式，
+可以把 `CF_DIB` 还原成 PNG 做像素比对：
+
+```bash
+python tools/clip_inspect.py out.png
+```
+
 ## 更新日志
+
+### v1.0.2
+
+- 修复**复制的图片只有个别软件（如企业微信）能粘贴**：原来只调用 `Clipboard.SetImage`，
+  让 OLE 从 `Bitmap` 自动转换出 `CF_DIB`，WPF 会给出 `BI_BITFIELDS`（`biCompression=3`）的头，
+  部分原生读图实现（Qt 系、部分编辑器）拒收。现在自己构造 **`BI_RGB`** 的 `CF_DIB`，
+  并同时提供 `CF_BITMAP`、`PNG`、`image/png` 与 .NET `Bitmap` 四类内容。
+- `PNG` 格式改用 `MemoryStream` 写入：直接用 `byte[]` 会被 .NET 序列化一层，
+  原生程序按 HGLOBAL 读会拿到带头的垃圾数据。
+- 新增 `--cliptest` 自检与 `tools/clip_inspect.py`（纯 Win32 API 枚举/还原剪贴板），
+  可从独立进程验证别的软件粘贴时到底拿到什么。
 
 ### v1.0.1
 

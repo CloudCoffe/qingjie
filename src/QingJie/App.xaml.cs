@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.Win32;
@@ -180,6 +181,16 @@ public partial class App : Application
             if (index + 1 < args.Length)
             {
                 RunDragTest(args[index + 1]);
+                return true;
+            }
+        }
+
+        if (args.Contains("--cliptest"))
+        {
+            int index = Array.IndexOf(args, "--cliptest");
+            if (index + 1 < args.Length)
+            {
+                RunClipTest(args[index + 1]);
                 return true;
             }
         }
@@ -539,6 +550,111 @@ public partial class App : Application
         }
     }
 
+    /// <summary>开发用：验证剪贴板写入的格式与像素，模拟别的软件粘贴时看到的内容。</summary>
+    private void RunClipTest(string outputPath)
+    {
+        try
+        {
+            var image = BuildClipTestImage();
+            ImageIo.SavePng(image, outputPath);
+
+            bool copied = ImageIo.CopyToClipboard(image);
+            Logger.Info($"剪贴板自检：写入={copied} 图像 {image.PixelWidth}x{image.PixelHeight} {image.Format}");
+
+            bool dipAvailable = ClipboardImage.IsAvailable(ClipboardImage.DibFormat);
+            bool bitmapAvailable = ClipboardImage.IsAvailable(ClipboardImage.BitmapFormat);
+            bool pngAvailable = ClipboardImage.IsAvailable(ClipboardImage.Png);
+            bool mimeAvailable = ClipboardImage.IsAvailable(ClipboardImage.PngMime);
+            Logger.Info($"剪贴板格式：CF_DIB={dipAvailable} CF_BITMAP={bitmapAvailable} " +
+                        $"PNG={pngAvailable} image/png={mimeAvailable}");
+
+            var dib = ClipboardImage.ReadBack(ClipboardImage.DibFormat);
+            if (dib is null || dib.Length < 40)
+            {
+                Logger.Error("剪贴板自检：读不回 CF_DIB");
+            }
+            else
+            {
+                int biSize = BitConverter.ToInt32(dib, 0);
+                int width = BitConverter.ToInt32(dib, 4);
+                int height = BitConverter.ToInt32(dib, 8);
+                short planes = BitConverter.ToInt16(dib, 12);
+                short bitCount = BitConverter.ToInt16(dib, 14);
+                int compression = BitConverter.ToInt32(dib, 16);
+                int sizeImage = BitConverter.ToInt32(dib, 20);
+                int expectedStride = width * 4;
+
+                Logger.Info($"CF_DIB 头：biSize={biSize} {width}x{height} planes={planes} " +
+                            $"bitCount={bitCount} compression={compression} sizeImage={sizeImage} " +
+                            $"总长={dib.Length} 期望={40 + expectedStride * height}");
+
+                // BI_RGB(0) 是各软件解析最稳的压缩方式；BI_BITFIELDS(3) 会让 GDI+/Qt 系读图失败
+                bool headerOk = biSize == 40 && width == image.PixelWidth && height == image.PixelHeight
+                                && planes == 1 && bitCount == 32 && compression == 0
+                                && dib.Length == 40 + expectedStride * height;
+
+                bool alphaOk = true;
+                for (int i = 43; i < dib.Length; i += 4)
+                {
+                    if (dib[i] != 0xFF)
+                    {
+                        alphaOk = false;
+                        break;
+                    }
+                }
+
+                Logger.Info($"CF_DIB 校验：头部={headerOk} alpha全不透明={alphaOk} " +
+                            $"左下角像素={DescribePixel(dib, width, height, 4, 4)} " +
+                            $"中部像素={DescribePixel(dib, width, height, width / 2, height / 2)}");
+            }
+
+            var png = ClipboardImage.ReadBack(ClipboardImage.Png);
+            bool pngOk = png is { Length: > 8 }
+                         && png[0] == 0x89 && png[1] == 0x50 && png[2] == 0x4E && png[3] == 0x47;
+            Logger.Info($"PNG 格式校验：{pngOk}（{(png?.Length ?? 0)} 字节）");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("剪贴板自检失败", ex);
+        }
+        finally
+        {
+            ExitApp();
+        }
+    }
+
+    /// <summary>造一张带已知色块的测试图，便于逐点核对剪贴板内容。</summary>
+    private static BitmapSource BuildClipTestImage()
+    {
+        const int width = 640;
+        const int height = 400;
+
+        var visual = new DrawingVisual();
+        using (var dc = visual.RenderOpen())
+        {
+            dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(0x33, 0x66, 0xCC)), null,
+                new Rect(0, 0, width, height));
+            dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(0x22, 0xC5, 0x5E)), null,
+                new Rect(40, 60, 120, 80));
+            dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(0xE1, 0x1D, 0x48)), null,
+                new Rect(500, 300, 100, 60));
+        }
+
+        var rtb = new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+        rtb.Render(visual);
+        rtb.Freeze();
+        return rtb;
+    }
+
+    /// <summary>按 DIB 的自下而上布局取一个像素，返回 BGR 十六进制。</summary>
+    private static string DescribePixel(byte[] dib, int width, int height, int x, int y)
+    {
+        int stride = width * 4;
+        int offset = 40 + (height - 1 - y) * stride + x * 4;
+        if (offset + 3 >= dib.Length) return "越界";
+        return $"#{dib[offset + 2]:X2}{dib[offset + 1]:X2}{dib[offset]:X2}";
+    }
+
     /// <summary>把光标从 (x1,y1) 分步移到 (x2,y2)，中间按下左键再抬起。</summary>
     private static async Task DragAsync(int x1, int y1, int x2, int y2, int steps)
     {
@@ -577,7 +693,8 @@ public partial class App : Application
     }
 
     private static void SaveScreen(string path)
-    {        try
+    {
+        try
         {
             using var grab = ScreenGrab.Capture();
             ImageIo.SavePng(grab.Full, path);
