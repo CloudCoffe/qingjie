@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Windows;
@@ -208,6 +209,16 @@ public partial class App : Application
             if (index + 1 < args.Length)
             {
                 RunAnnoTest(args[index + 1]);
+                return true;
+            }
+        }
+
+        if (args.Contains("--ocrtest"))
+        {
+            int index = Array.IndexOf(args, "--ocrtest");
+            if (index + 1 < args.Length)
+            {
+                RunOcrTest(args[index + 1]);
                 return true;
             }
         }
@@ -740,6 +751,103 @@ public partial class App : Application
         }
         finally
         {
+            ExitApp();
+        }
+    }
+
+    /// <summary>开发用：验证取字的完整链路（造字 → 划区 → 系统 OCR → 面板文本）。</summary>
+    private async void RunOcrTest(string outputPath)
+    {
+        Window? probe = null;
+        try
+        {
+            probe = new Window
+            {
+                Width = 520,
+                Height = 150,
+                WindowStyle = WindowStyle.None,
+                ResizeMode = ResizeMode.NoResize,
+                ShowInTaskbar = false,
+                Topmost = true,
+                Background = Brushes.White,
+                Left = 320,
+                Top = 300,
+                Content = new System.Windows.Controls.TextBlock
+                {
+                    Text = "轻截取字自检 QJ-OCR-2026",
+                    FontSize = 38,
+                    Foreground = Brushes.Black,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+            probe.Show();
+            await Task.Delay(700);
+
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(probe).Handle;
+            if (!Native.GetWindowRect(hwnd, out var rect))
+            {
+                Logger.Error("取字自检：拿不到测试窗口位置");
+                return;
+            }
+
+            CaptureSession.Start(Config);
+            await Task.Delay(900);
+
+            var overlay = CaptureSession.ActiveWindow;
+            if (overlay is null)
+            {
+                Logger.Error("取字自检：覆盖层未创建");
+                return;
+            }
+
+            await DragAsync(rect.Left + 4, rect.Top + 4, rect.Right - 4, rect.Bottom - 4, 8);
+            await Task.Delay(300);
+
+            var watch = Stopwatch.StartNew();
+            overlay.RunOcrForTest();
+
+            while (watch.ElapsedMilliseconds < 25000)
+            {
+                await Task.Delay(120);
+                if (!overlay.IsOcrBusy && overlay.OcrPanelVisible) break;
+            }
+
+            string text = overlay.OcrPanelText.Replace("\r\n", " / ").Replace("\n", " / ");
+            Logger.Info($"取字自检：耗时 {watch.ElapsedMilliseconds} ms 面板={overlay.OcrPanelVisible} " +
+                        $"状态=[{overlay.OcrPanelStatus}] 文本=[{text}]");
+
+            if (overlay.OcrPanelStatus is "识别中…" or "")
+            {
+                Logger.Error("取字自检：超时未返回");
+                return;
+            }
+
+            bool ok = text.Contains("2026") && (text.Contains("自检") || text.Contains("取字"));
+            Logger.Info(ok ? "取字自检：通过" : "取字自检：失败（未识别出预期文字）");
+
+            string clipboard = string.Empty;
+            try
+            {
+                if (Clipboard.ContainsText()) clipboard = Clipboard.GetText().Replace("\r\n", " / ").Replace("\n", " / ");
+            }
+            catch (Exception ex)
+            {
+                Logger.Warn($"取字自检：读剪贴板失败 {ex.Message}");
+            }
+
+            Logger.Info($"取字自检：剪贴板=[{clipboard}]，与识别文本一致={clipboard == text}");
+
+            await Task.Delay(500); // 等界面重绘完再截屏
+            SaveScreen(outputPath);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error("取字自检失败", ex);
+        }
+        finally
+        {
+            probe?.Close();
             ExitApp();
         }
     }

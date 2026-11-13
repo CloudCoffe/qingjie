@@ -40,10 +40,18 @@ Ctrl + Alt + A   →   拖拽划区   →   回车复制 / Ctrl+S 保存 / Ctrl+
 | 画笔 | `P` | 自由涂画 |
 | 文字 | `T` | 点击后直接输入，`Shift+Enter` 换行 |
 | 马赛克 | `M` | 块内取平均色，真正的像素化（非高斯模糊） |
+| 取字 | `X` | 识别选区文字并复制（系统 OCR 引擎） |
 
 - 7 种颜色 + 3 档线条粗细
 - `Ctrl+Z` 撤销上一步标注
 - 预览与导出使用同一套渲染逻辑，**所见即所得**
+
+### 取字（OCR）
+
+- 框选后点工具栏的「取字」或按 `X`，直接识别选区里的文字
+- 用的是 **Windows 自带的 OCR 引擎**（`Windows.Media.Ocr`）：离线、免下载模型、跟随系统语言
+- 识别结果在选区旁的面板里展示，**自动复制到剪贴板**，也可以在面板里改两笔再复制
+- 识别的是原始截图，**不含标注笔画**，框选时不必担心自己画的箭头干扰结果
 
 ### 贴图钉住
 
@@ -74,6 +82,7 @@ Ctrl + Alt + A   →   拖拽划区   →   回车复制 / Ctrl+S 保存 / Ctrl+
 | 热键 | 隐藏消息窗口 + `RegisterHotKey`（`MOD_NOREPEAT`） |
 | 贴图 | 无边框置顶窗口，物理像素定位，`DragMove` + 滚轮缩放 |
 | 悬浮球 | 无边框置顶窗口，`SetWindowPos` 走物理像素；按下记录光标与窗口矩形，位移累计超过 8px 才算拖动，否则算点击；`WS_EX_TOOLWINDOW` 避开 Alt+Tab |
+| 取字 | 调用系统 `Windows.Media.Ocr`（离线引擎）；为避开 25 MB 的 WinRT C# 投影，改用系统自带的 Windows PowerShell 5.1 + .NET Framework WinRT 互操作执行，结果以 Base64 回传，体积几乎零增长 |
 
 ### 目录结构
 
@@ -95,6 +104,7 @@ Ctrl + Alt + A   →   拖拽划区   →   回车复制 / Ctrl+S 保存 / Ctrl+
 │  │  ├─ CaptureSession.cs        # 一次截图流程的编排
 │  │  ├─ OverlayWindow.xaml(.cs)  # 划区 + 标注 + 工具栏
 │  │  └─ Annotation.cs            # 标注模型 / 绘制 / 马赛克
+│  ├─ Ocr/OcrService.cs           # 取字：调系统 OCR 引擎
 │  ├─ Ball/FloatingBall.xaml(.cs) # 桌面悬浮球
 │  ├─ Pin/PinWindow.xaml(.cs)     # 贴图窗口
 │  └─ Views/SettingsWindow.xaml   # 设置窗口
@@ -112,6 +122,7 @@ Ctrl + Alt + A   →   拖拽划区   →   回车复制 / Ctrl+S 保存 / Ctrl+
 | `Ctrl+S` | 保存为 PNG |
 | `Ctrl+P` | 贴图钉住 |
 | `Ctrl+Z` | 撤销标注 |
+| `X` | 识别选区文字（取字） |
 | `Ctrl+A` | 选中整个屏幕 |
 | `方向键` / `Shift+方向键` | 微调选区 1px / 10px |
 | `Esc` | 退出工具 → 取消选区 → 退出截图（逐级） |
@@ -162,6 +173,16 @@ python tools/clip_inspect.py out.png
 ```
 
 ## 更新日志
+
+### v1.0.5
+
+- 新增**取字（OCR）**：框选后按 `X` 或点工具栏按钮，识别选区文字并自动复制到剪贴板。
+- 走的是 Windows 自带 OCR 引擎，**离线、免装模型**，语言跟随系统。
+- 实现上刻意没引用 WinRT 的 C# 投影：那会让单文件从 300 KB 变成 25 MB。
+  改用系统自带 Windows PowerShell 5.1 的 .NET Framework WinRT 互操作跑一次识别，
+  结果以 Base64 回传避开控制台代码页，体积几乎零增长。
+- Windows OCR 把中文逐字当词（「轻 截 取 字」），这里做了汉字间空格归一化。
+- 新增 `--ocrtest` 自检模式：造一张带字的窗口 → 真实划区 → 跑完整 OCR 链路 → 校验面板文本。
 
 ### v1.0.4
 

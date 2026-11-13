@@ -8,6 +8,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using QingJie.Core;
+using QingJie.Ocr;
 
 namespace QingJie.Capture;
 
@@ -212,6 +213,7 @@ public sealed partial class OverlayWindow : Window
     {
         if (_closing) return;
         if (Toolbar.Visibility == Visibility.Visible && Toolbar.IsMouseOver) return;
+        if (OcrPanel.Visibility == Visibility.Visible && OcrPanel.IsMouseOver) return;
 
         HideTextEditor(commit: true);
 
@@ -257,6 +259,7 @@ public sealed partial class OverlayWindow : Window
         _annotations.Clear();
         _mosaicCache.Clear();
         _draft = null;
+        HideOcrPanel();
         _mode = DragMode.Creating;
         _dragOrigin = pos;
         _selection = new Rect(pos, new Size(0, 0));
@@ -686,6 +689,7 @@ public sealed partial class OverlayWindow : Window
             HintPanel.Visibility = Visibility.Visible;
             Canvas.SetLeft(HintPanel, Math.Max(8, (w - 420) / 2));
             Canvas.SetTop(HintPanel, 28);
+            HideOcrPanel();
 
             return;
         }
@@ -733,6 +737,8 @@ public sealed partial class OverlayWindow : Window
         Canvas.SetTop(SizeLabel, s.Top > 26 ? s.Top - 26 : s.Bottom + 6);
 
         UpdateToolbarPosition(s);
+
+        if (OcrPanel.Visibility == Visibility.Visible) PositionOcrPanel();
     }
 
     private void UpdateToolbarPosition(Rect s)
@@ -894,8 +900,137 @@ public sealed partial class OverlayWindow : Window
         RefreshAnnotations();
     }
 
-    private void SaveButton_Click(object sender, RoutedEventArgs e) => Submit(CaptureAction.Save);
+    // ---------------------------------------------------------------- 取字（OCR）
 
+    private bool _ocrBusy;
+
+    private void OcrButton_Click(object sender, RoutedEventArgs e) => StartOcr();
+
+    /// <summary>对当前选区识别文字：用原图（不含标注）→ 系统 OCR → 面板展示并复制到剪贴板。</summary>
+    private async void StartOcr()
+    {
+        if (_closing || _ocrBusy || !HasSelection) return;
+
+        HideTextEditor(commit: true);
+
+        var phys = SelectionPhysical;
+        if (phys.Width < 40 || phys.Height < 40)
+        {
+            OcrStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xC0, 0x6A));
+            ShowOcrPanel("区域太小，请框选得更大一些", string.Empty, busy: false);
+            return;
+        }
+
+        _ocrBusy = true;
+        var crop = _grab.CropPhysical(phys.X, phys.Y, phys.Width, phys.Height);
+
+        ShowOcrPanel("识别中…", string.Empty, busy: true);
+
+        try
+        {
+            var outcome = await OcrService.RecognizeAsync(crop);
+            if (_closing || !IsLoaded) return;
+
+            if (outcome.Error is not null)
+            {
+                OcrStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x8A, 0x80));
+                ShowOcrPanel(outcome.Error, string.Empty, busy: false);
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(outcome.Text))
+            {
+                OcrStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xC0, 0x6A));
+                ShowOcrPanel("没有识别到文字", string.Empty, busy: false);
+                return;
+            }
+
+            OcrStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x7F, 0xD6, 0xA0));
+            ShowOcrPanel(string.Empty, outcome.Text.Trim(), busy: false);
+            CopyOcrText(OcrText.Text, announce: true);
+        }
+        finally
+        {
+            _ocrBusy = false;
+        }
+    }
+
+    private void ShowOcrPanel(string status, string text, bool busy)
+    {
+        OcrStatus.Text = status;
+        OcrText.Text = text;
+        OcrCopyButton.IsEnabled = !busy && text.Length > 0;
+        OcrPanel.Visibility = Visibility.Visible;
+        OcrPanel.UpdateLayout();
+        PositionOcrPanel();
+    }
+
+    private void PositionOcrPanel()
+    {
+        double w = Math.Max(1, ActualWidth);
+        double h = Math.Max(1, ActualHeight);
+
+        OcrPanel.Measure(new Size(OcrPanel.Width, double.PositiveInfinity));
+        double panelW = OcrPanel.Width;
+        double panelH = Math.Max(90, OcrPanel.DesiredSize.Height);
+
+        // 工具栏也贴在选区下方，面板要排在它下面，两者不能叠在一起
+        double anchorBottom = _selection.Bottom;
+        if (Toolbar.Visibility == Visibility.Visible)
+        {
+            Toolbar.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            anchorBottom = Math.Max(anchorBottom, Canvas.GetTop(Toolbar) + Toolbar.DesiredSize.Height);
+        }
+
+        double left = Math.Clamp(_selection.X, 8, Math.Max(8, w - panelW - 8));
+        double top = anchorBottom + 10;
+        if (top + panelH > h - 8) top = _selection.Top - panelH - 12;
+        if (top < 8) top = Math.Max(8, h - panelH - 8);
+
+        Canvas.SetLeft(OcrPanel, left);
+        Canvas.SetTop(OcrPanel, top);
+    }
+
+    private void HideOcrPanel()
+    {
+        if (OcrPanel.Visibility != Visibility.Visible) return;
+        OcrPanel.Visibility = Visibility.Collapsed;
+        OcrText.Text = string.Empty;
+        OcrStatus.Text = string.Empty;
+    }
+
+    private void OcrCopyButton_Click(object sender, RoutedEventArgs e) => CopyOcrText(OcrText.Text, announce: true);
+
+    private void OcrCloseButton_Click(object sender, RoutedEventArgs e) => HideOcrPanel();
+
+    private void CopyOcrText(string text, bool announce)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+
+        try
+        {
+            Clipboard.SetText(text);
+            if (announce) OcrStatus.Text = "已复制到剪贴板";
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn($"复制文字失败：{ex.Message}");
+            if (announce) OcrStatus.Text = "复制失败，可手动选中复制";
+        }
+    }
+
+    /// <summary>开发自检：触发一次取字，并回报面板状态。</summary>
+    internal void RunOcrForTest() => StartOcr();
+
+    internal bool IsOcrBusy => _ocrBusy;
+
+    internal bool OcrPanelVisible => OcrPanel.Visibility == Visibility.Visible;
+
+    internal string OcrPanelText => OcrText.Text;
+
+    internal string OcrPanelStatus => OcrStatus.Text;
+
+    private void SaveButton_Click(object sender, RoutedEventArgs e) => Submit(CaptureAction.Save);
     private void CopyButton_Click(object sender, RoutedEventArgs e) => Submit(CaptureAction.Copy);
 
     private void PinButton_Click(object sender, RoutedEventArgs e) => Submit(CaptureAction.Pin);
@@ -919,6 +1054,10 @@ public sealed partial class OverlayWindow : Window
             {
                 HideTextEditor(commit: false);
             }
+            else if (OcrPanel.Visibility == Visibility.Visible)
+            {
+                HideOcrPanel();
+            }
             else if (_tool != AnnotationTool.None)
             {
                 SelectTool(AnnotationTool.None);
@@ -933,6 +1072,7 @@ public sealed partial class OverlayWindow : Window
         }
 
         if (TextEditor.Visibility == Visibility.Visible) return;
+        if (OcrText.IsKeyboardFocusWithin) return;
 
         if (e.Key == Key.Enter)
         {
@@ -1029,6 +1169,10 @@ public sealed partial class OverlayWindow : Window
                     SelectTool(AnnotationTool.Mosaic);
                     e.Handled = true;
                     return;
+                case Key.X:
+                    StartOcr();
+                    e.Handled = true;
+                    return;
             }
         }
     }
@@ -1090,6 +1234,7 @@ public sealed partial class OverlayWindow : Window
         _draft = null;
         _tool = AnnotationTool.None;
         _selection = Rect.Empty;
+        HideOcrPanel();
         UpdateSelectionVisuals();
     }
 
